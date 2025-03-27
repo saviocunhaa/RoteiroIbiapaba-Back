@@ -9,8 +9,6 @@ services:
       - media_volume:/app/media
     depends_on:
       - db
-    env_file:
-      - .env
     environment:
       - DATABASE_URL=postgresql://postgres:postgres@db:5432/roteiro_ibiapaba_db
       - DEBUG=False
