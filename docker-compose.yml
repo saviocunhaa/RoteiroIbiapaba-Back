@@ -12,6 +12,9 @@ services:
     environment:
       - DATABASE_URL=postgresql://postgres:postgres@db:5432/roteiro_ibiapaba_db
       - DEBUG=False
+    ports:
+      - "8000:8000"
+    command: ./docker-entrypoint.sh
     networks:
       - app-network
 
@@ -24,20 +27,6 @@ services:
       - POSTGRES_PASSWORD=soeusei123
       - POSTGRES_USER=postgres
       - POSTGRES_DB=roteiro_ibiapaba_db
-    networks:
-      - app-network
-
-  nginx:
-    image: nginx:1.21
-    restart: always
-    volumes:
-      - ./nginx/conf.d:/etc/nginx/conf.d
-      - static_volume:/app/staticfiles
-      - media_volume:/app/media
-    ports:
-      - "80:80"
-    depends_on:
-      - web
     networks:
       - app-network
 

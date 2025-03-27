@@ -9,11 +9,36 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 SECRET_KEY = 'django-insecure-+s8j@uh%)p9^7!^w456browv28mjj!bz&e&bzq!9@lxs^+zdsn'
 
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = True
+DEBUG = os.environ.get('DEBUG', 'True') == 'True'
 
-ALLOWED_HOSTS = []
+# Update this line in your settings.py
+# Update ALLOWED_HOSTS to explicitly include your domain
+ALLOWED_HOSTS = os.environ.get('ALLOWED_HOSTS', 'localhost,127.0.0.1,api.roteiroibiapaba.com.br').split(',')
 
-# Application definition
+# Fix CORS configuration - remove the conflicting setting
+CORS_ALLOWED_ORIGINS = [
+    "https://roteiroibiapaba.com.br",
+    "https://www.roteiroibiapaba.com.br",
+    "https://api.roteiroibiapaba.com.br",
+    "http://localhost:3000",
+    "http://127.0.0.1:3000",
+    "http://localhost:8000",
+]
+CORS_ALLOW_CREDENTIALS = True
+
+# Remove this line as it conflicts with CORS_ALLOWED_ORIGINS
+# CORS_ALLOW_ALL_ORIGINS = True  
+
+# Update static files configuration
+STATIC_URL = '/static/'
+STATIC_ROOT = os.path.join(BASE_DIR, 'staticfiles')
+
+# Use a simpler static files storage for now to debug the issue
+STATICFILES_STORAGE = 'whitenoise.storage.CompressedStaticFilesStorage'
+
+# Add this to help with serving static files
+WHITENOISE_ROOT = os.path.join(BASE_DIR, 'staticfiles')
+
 # Add to INSTALLED_APPS
 INSTALLED_APPS = [
     'django.contrib.admin',
@@ -28,6 +53,7 @@ INSTALLED_APPS = [
     'rest_framework_simplejwt',
     'drf_yasg',  # Add this line
     'django_filters',  # Add this line for filtering
+    'corsheaders',  # Add CORS headers support
     
     # Local apps
     'users',
@@ -36,6 +62,7 @@ INSTALLED_APPS = [
 ]
 
 # Add Swagger settings
+# Update your SWAGGER_SETTINGS to include static URLs
 SWAGGER_SETTINGS = {
     'SECURITY_DEFINITIONS': {
         'Bearer': {
@@ -46,10 +73,22 @@ SWAGGER_SETTINGS = {
     },
     'USE_SESSION_AUTH': False,
     'JSON_EDITOR': True,
+    'VALIDATOR_URL': None,  # Disable validator
+    'DISPLAY_OPERATION_ID': False,
+    'SUPPORTED_SUBMIT_METHODS': [  # Methods supported for try it out
+        'get',
+        'post',
+        'put',
+        'delete',
+        'patch',
+    ],
 }
 
+# Make sure WhiteNoise is properly configured
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
+    'whitenoise.middleware.WhiteNoiseMiddleware',  # This must be right after SecurityMiddleware
+    'corsheaders.middleware.CorsMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
@@ -57,6 +96,9 @@ MIDDLEWARE = [
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
 ]
+
+# CORS settings
+CORS_ALLOW_ALL_ORIGINS = True  # In production, you might want to restrict this
 
 ROOT_URLCONF = 'roteiro_ibiapaba.urls'
 
@@ -79,24 +121,23 @@ TEMPLATES = [
 WSGI_APPLICATION = 'roteiro_ibiapaba.wsgi.application'
 
 # Database
-DATABASES = {
-    'default': {
-        'ENGINE': 'django.db.backends.postgresql',
-        'NAME': 'roteiro_ibiapaba_db',
-        'USER': 'postgres',
-        'PASSWORD': 'soeusei123',
-        'HOST': 'localhost',
-        'PORT': '5432',
+# Use environment variables for database configuration in Docker
+if os.environ.get('DATABASE_URL'):
+    import dj_database_url
+    DATABASES = {
+        'default': dj_database_url.config(default=os.environ.get('DATABASE_URL'))
     }
-}
-
-# # Database sqlite3 alternative
-# DATABASES = {
-#     'default': {
-#         'ENGINE': 'django.db.backends.sqlite3',
-#         'NAME': BASE_DIR / 'db.sqlite3',
-#     }
-# }
+else:
+    DATABASES = {
+        'default': {
+            'ENGINE': 'django.db.backends.postgresql',
+            'NAME': 'roteiro_ibiapaba_db',
+            'USER': 'postgres',
+            'PASSWORD': 'soeusei123',
+            'HOST': 'localhost',
+            'PORT': '5432',
+        }
+    }
 
 # Password validation
 AUTH_PASSWORD_VALIDATORS = [
@@ -121,8 +162,23 @@ USE_I18N = True
 USE_TZ = True
 
 # Static files (CSS, JavaScript, Images)
-STATIC_URL = 'static/'
+# Static files configuration
+STATIC_URL = '/static/'
 STATIC_ROOT = os.path.join(BASE_DIR, 'staticfiles')
+
+# Fix the typo in STATICFILES_STORAGE - it says "statvicfiles" instead of "staticfiles"
+STATICFILES_STORAGE = 'django.contrib.staticfiles.storage.StaticFilesStorage'
+
+# Make sure to include all app static directories
+STATICFILES_DIRS = [
+    os.path.join(BASE_DIR, 'static'),
+]
+
+# Remove the duplicate WhiteNoise storage setting
+# STATICFILES_STORAGE = 'whitenoise.storage.CompressedStaticFilesStorage'
+
+# Keep this setting
+WHITENOISE_USE_FINDERS = True
 
 # Media files
 MEDIA_URL = '/media/'
@@ -161,7 +217,6 @@ SIMPLE_JWT = {
     'AUTH_TOKEN_CLASSES': ('rest_framework_simplejwt.tokens.AccessToken',),
     'TOKEN_TYPE_CLAIM': 'token_type',
 }
-
 
 # Email settings
 EMAIL_BACKEND = 'django.core.mail.backends.console.EmailBackend'
