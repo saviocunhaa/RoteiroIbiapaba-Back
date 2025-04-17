@@ -10,6 +10,9 @@ from rest_framework.response import Response
 from rest_framework.parsers import MultiPartParser, FormParser
 from .models import TouristSpot, TouristSpotImage
 from .serializers import TouristSpotSerializer, TouristSpotImageSerializer
+from rest_framework.views import APIView
+import google.generativeai as genai
+from django.conf import settings
 
 class IsAdminOrReadOnly(permissions.BasePermission):
     """
@@ -190,3 +193,106 @@ class TouristSpotViewSet(viewsets.ModelViewSet):
             return Response(status=status.HTTP_204_NO_CONTENT)
         except TouristSpotImage.DoesNotExist:
             return Response({'error': 'Image not found'}, status=status.HTTP_404_NOT_FOUND)
+
+# Add this new class at the end of the file
+class GenerateItineraryView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+    
+    @swagger_auto_schema(
+        operation_description="Gera um roteiro personalizado usando a API Gemini",
+        request_body=openapi.Schema(
+            type=openapi.TYPE_OBJECT,
+            required=['dias'],
+            properties={
+                'cidade': openapi.Schema(type=openapi.TYPE_STRING, description='Cidade a visitar (ou "serra" para todas)'),
+                'dias': openapi.Schema(type=openapi.TYPE_INTEGER, description='Número de dias da viagem'),
+                'interesses': openapi.Schema(type=openapi.TYPE_STRING, description='Interesses do usuário (opcional)'),
+                'com_criancas': openapi.Schema(type=openapi.TYPE_BOOLEAN, description='Viagem com crianças (opcional)'),
+                'hospedagem': openapi.Schema(type=openapi.TYPE_STRING, description='Local de hospedagem (opcional)'),
+            }
+        ),
+        responses={
+            200: openapi.Response(
+                description="Roteiro gerado com sucesso",
+                schema=openapi.Schema(
+                    type=openapi.TYPE_OBJECT,
+                    properties={
+                        'roteiro': openapi.Schema(type=openapi.TYPE_STRING)
+                    }
+                )
+            ),
+            400: "Parâmetros inválidos",
+            404: "Nenhum ponto turístico encontrado"
+        }
+    )
+    def post(self, request):
+        """
+        Gera um roteiro personalizado usando a API Gemini.
+        
+        Recebe informações como cidade, número de dias e interesses do usuário,
+        e retorna um roteiro detalhado com base nos pontos turísticos cadastrados.
+        """
+        cidade = request.data.get('cidade')
+        dias = request.data.get('dias')
+        interesses = request.data.get('interesses', '')
+        com_criancas = request.data.get('com_criancas', False)
+        hospedagem = request.data.get('hospedagem', '')
+
+        if not dias:
+            return Response({'error': 'Informe o número de dias da viagem.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        # If 'cidade' is 'serra', 'todas', or empty, fetch all spots
+        if not cidade or cidade.strip().lower() in ['serra', 'todas', 'tudo', 'all']:
+            spots = TouristSpot.objects.all()
+            cidade_nome = "Serra da Ibiapaba"
+        else:
+            spots = TouristSpot.objects.filter(cidade__iexact=cidade)
+            cidade_nome = cidade
+
+        if not spots.exists():
+            return Response({'error': 'Nenhum ponto turístico encontrado para esta região.'}, status=status.HTTP_404_NOT_FOUND)
+
+        # Prepare spot data for the prompt
+        spots_data = []
+        for spot in spots:
+            # Get image URLs if available
+            imagens = spot.imagens.all()
+            imagem_info = f", Imagens disponíveis: {imagens.count()}" if imagens.exists() else ""
+            
+            spots_data.append(
+                f"{spot.nome}: {spot.descricao} (Categoria: {spot.get_categoria_display()}, "
+                f"Cidade: {spot.cidade}, Coordenadas: {spot.latitude},{spot.longitude}{imagem_info})"
+            )
+        
+        spots_text = "\n".join(spots_data)
+
+        # Build a comprehensive prompt for Gemini
+        criancas_texto = "Sim, estou viajando com crianças. " if com_criancas else ""
+        hospedagem_texto = f"Estarei hospedado em {hospedagem}. " if hospedagem else ""
+        
+        prompt = (
+            f"Sou um turista e vou passar {dias} dias na região {cidade_nome}. "
+            f"{criancas_texto}{hospedagem_texto}"
+            f"Meus interesses são: {interesses if interesses else 'diversos'}. "
+            f"Esses são os pontos turísticos cadastrados na região:\n\n{spots_text}\n\n"
+            "Por favor, monte um roteiro diário detalhado e otimizado, sugerindo quais pontos visitar em cada dia, "
+            "considerando a proximidade geográfica, variedade de experiências e aproveitamento do tempo. "
+            "Inclua sugestões de horários para cada atração e dicas práticas. "
+            "Organize o roteiro por dia (Dia 1, Dia 2, etc.) e seja objetivo. "
+            "Responda em português do Brasil."
+        )
+
+        try:
+            # Call Gemini API
+            genai.configure(api_key=settings.GEMINI_API_KEY)
+            model = genai.GenerativeModel('gemini-pro')
+            response = model.generate_content(prompt)
+            
+            if hasattr(response, 'text'):
+                roteiro = response.text
+            else:
+                roteiro = response.candidates[0].content.parts[0].text
+                
+            return Response({'roteiro': roteiro})
+        except Exception as e:
+            return Response({'error': f'Erro ao gerar roteiro: {str(e)}'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)

@@ -84,3 +84,7 @@ SIMPLE_JWT = {
 
 # Email settings
 EMAIL_BACKEND = 'django.core.mail.backends.console.EmailBackend'
+
+
+# Gemini API settings
+GEMINI_API_KEY = os.environ.get('GEMINI_API_KEY', '')  # Set your API key in environment variables
