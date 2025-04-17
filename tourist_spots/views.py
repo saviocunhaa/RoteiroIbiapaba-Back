@@ -4,6 +4,12 @@ from drf_yasg.utils import swagger_auto_schema
 from drf_yasg import openapi
 from .models import TouristSpot
 from .serializers import TouristSpotSerializer
+from rest_framework import viewsets, status
+from rest_framework.decorators import action
+from rest_framework.response import Response
+from rest_framework.parsers import MultiPartParser, FormParser
+from .models import TouristSpot, TouristSpotImage
+from .serializers import TouristSpotSerializer, TouristSpotImageSerializer
 
 class IsAdminOrReadOnly(permissions.BasePermission):
     """
@@ -114,3 +120,73 @@ class TouristSpotViewSet(viewsets.ModelViewSet):
         Apenas administradores podem remover pontos turísticos.
         """
         return super().destroy(request, *args, **kwargs)
+    
+    def get_permissions(self):
+        """
+        Allow anyone to view tourist spots, but require authentication for other actions.
+        """
+        if self.action in ['list', 'retrieve']:
+            permission_classes = [permissions.AllowAny]
+        else:
+            permission_classes = [permissions.IsAuthenticated]
+        return [permission() for permission in permission_classes]
+
+    @action(detail=True, methods=['post'], parser_classes=[MultiPartParser, FormParser])
+    def upload_image(self, request, pk=None):
+        """
+        Upload an image for a tourist spot
+        """
+        tourist_spot = self.get_object()
+        
+        # Handle single image upload
+        if 'imagem' in request.data:
+            serializer = TouristSpotImageSerializer(data={
+                'ponto_turistico': tourist_spot.id,
+                'imagem': request.data['imagem'],
+                'descricao': request.data.get('descricao', '')
+            })
+            
+            if serializer.is_valid():
+                serializer.save(ponto_turistico=tourist_spot)
+                return Response(serializer.data, status=status.HTTP_201_CREATED)
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        
+        # Handle multiple image upload
+        elif 'imagens' in request.data:
+            images = request.FILES.getlist('imagens')
+            data = []
+            
+            for image in images:
+                image_serializer = TouristSpotImageSerializer(data={
+                    'ponto_turistico': tourist_spot.id,
+                    'imagem': image,
+                    'descricao': request.data.get('descricao', '')
+                })
+                
+                if image_serializer.is_valid():
+                    image_serializer.save(ponto_turistico=tourist_spot)
+                    data.append(image_serializer.data)
+                else:
+                    return Response(image_serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+            
+            return Response(data, status=status.HTTP_201_CREATED)
+        
+        return Response({'error': 'No image provided'}, status=status.HTTP_400_BAD_REQUEST)
+    
+    @action(detail=True, methods=['delete'])
+    def delete_image(self, request, pk=None):
+        """
+        Delete an image from a tourist spot
+        """
+        tourist_spot = self.get_object()
+        image_id = request.query_params.get('image_id')
+        
+        if not image_id:
+            return Response({'error': 'No image ID provided'}, status=status.HTTP_400_BAD_REQUEST)
+        
+        try:
+            image = TouristSpotImage.objects.get(id=image_id, ponto_turistico=tourist_spot)
+            image.delete()
+            return Response(status=status.HTTP_204_NO_CONTENT)
+        except TouristSpotImage.DoesNotExist:
+            return Response({'error': 'Image not found'}, status=status.HTTP_404_NOT_FOUND)

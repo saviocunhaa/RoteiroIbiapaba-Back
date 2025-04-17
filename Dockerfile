@@ -6,6 +6,9 @@ WORKDIR /app
 ENV PYTHONDONTWRITEBYTECODE 1
 ENV PYTHONUNBUFFERED 1
 ENV DEBUG False
+ENV DJANGO_SUPERUSER_USERNAME admin
+ENV DJANGO_SUPERUSER_EMAIL admin@example.com
+ENV DJANGO_SUPERUSER_PASSWORD admin123
 
 # Install dependencies
 RUN apt-get update && apt-get install -y \
@@ -22,11 +25,13 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy project
 COPY . .
 
-# Create static directory if it doesn't exist
-RUN mkdir -p static
+# Create a script to run migrations, create superuser, and start the server
+RUN echo '#!/bin/bash\n\
+python manage.py migrate\n\
+python create_superuser.py\n\
+python manage.py collectstatic --noinput\n\
+gunicorn --bind 0.0.0.0:8000 roteiro_ibiapaba.wsgi:application\n\
+' > /app/start.sh && chmod +x /app/start.sh
 
-# Collect static files with verbose output to see what's happening
-RUN python manage.py collectstatic --noinput -v 2
-
-# Run gunicorn
-CMD ["gunicorn", "--bind", "0.0.0.0:8000", "roteiro_ibiapaba.wsgi:application"]
+# Run the script
+CMD ["/app/start.sh"]

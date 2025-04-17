@@ -30,4 +30,5 @@ class TouristSpotSerializer(serializers.ModelSerializer):
             'latitude': {'help_text': 'Latitude da localização (formato decimal)'},
             'longitude': {'help_text': 'Longitude da localização (formato decimal)'},
             'categoria': {'help_text': 'Categoria do ponto turístico (natural, histórico, etc.)'},
-        }  # Adicionado o parêntese de fechamento aqui
+            'imagens': {'help_text': 'Imagens relacionadas ao ponto turístico'},
+        }  
